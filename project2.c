@@ -31,8 +31,8 @@ int get_menu();
 //menu
 VisionFrame *loadfile();
 void add_frame();
-void print_all();
-void filter();
+void print_all(const VisionFrame *head);
+void filter(VisionFrame **head);
 void sort_frame();
 void search();
 void summary(const VisionFrame *head);
@@ -49,8 +49,8 @@ int main(){
 		switch(choice){
 		case 1:{head = loadfile();break;}
 		case 2:{add_frame();break;}
-		case 3:{print_all();break;}
-		case 4:{filter();break;}
+		case 3: { print_all(head); break; 
+		case 4:{ filter(&head); break; 
 		case 5:{sort_frame();break;}
 		case 6:{search();break;}
 		case 7:{summary(head);break;}
@@ -250,3 +250,131 @@ void check_memory(const VisionFrame *head){
     printf("----------------------\n");
 }
 
+double calculate_frame_avg_conf(const FrameData *data)
+{
+    if (data->target_count == 0)
+        return 0.0;
+    double sum = 0.0;
+    for (int i = 0; i < data->target_count; i++)
+    {
+        sum += data->targets[i].conf;
+    }
+    return sum / data->target_count;
+}
+
+void print_all(const VisionFrame *head)
+{
+    if (head == NULL)
+    {
+        printf("[!] List is empty. Nothing to print.\n");
+        return;
+    }
+
+    FILE *fp = fopen("report_output.txt", "w");
+    if (fp == NULL)
+    {
+        fprintf(stderr, "Error: Failed to open report_output.txt for writing.\n");
+        return;
+    }
+
+
+    const char *header = "========================================================================================\n"
+                         "                                  VISION LOG REPORT\n"
+                         "========================================================================================\n"
+                         "ID   | Time                | Cam   | Targets | AvgConf | Details (Cat/Conf)\n"
+                         "----------------------------------------------------------------------------------------\n";
+
+    printf("%s", header);
+    fprintf(fp, "%s", header);
+
+    const VisionFrame *current = head;
+    while (current != NULL)
+    {
+        double avg_conf = calculate_frame_avg_conf(&(current->data));
+
+
+        char details[256] = "";
+        for (int i = 0; i < current->data.target_count; i++)
+        {
+            char temp[50];
+            snprintf(temp, sizeof(temp), "%s(%.2f)%s",
+                     current->data.targets[i].category,
+                     current->data.targets[i].conf,
+                     (i == current->data.target_count - 1) ? "" : ", ");
+            strcat(details, temp);
+        }
+
+
+        printf("%-4d | %-19s | %-5s | %-7d | %-7.2f | %s\n",
+               current->data.frame_id,
+               current->data.time_str,
+               current->data.cam_id,
+               current->data.target_count,
+               avg_conf,
+               details);
+
+        fprintf(fp, "%-4d | %-19s | %-5s | %-7d | %-7.2f | %s\n",
+                current->data.frame_id,
+                current->data.time_str,
+                current->data.cam_id,
+                current->data.target_count,
+                avg_conf,
+                details);
+
+        current = current->next;
+    }
+
+    const char *footer = "========================================================================================\n";
+    printf("%s", footer);
+    fprintf(fp, "%s", footer);
+
+    fclose(fp);
+    printf("[+] Report generated successfully: report_output.txt\n");
+}
+
+
+void filter(VisionFrame **head)
+{
+    if (head == NULL || *head == NULL)
+    {
+        printf("[!] List is empty. Nothing to filter.\n");
+        return;
+    }
+
+    VisionFrame *current = *head;
+    VisionFrame *prev = NULL;
+    int removed_count = 0;
+
+    while (current != NULL)
+    {
+        double avg_conf = calculate_frame_avg_conf(&(current->data));
+
+        if (avg_conf < 0.5)
+        {
+            VisionFrame *temp = current;
+
+            if (prev == NULL)
+            {
+
+                *head = current->next;
+                current = *head;
+            }
+            else
+            {
+
+                prev->next = current->next;
+                current = current->next;
+            }
+
+            free(temp); 
+            removed_count++;
+        }
+        else
+        {
+            prev = current;
+            current = current->next;
+        }
+    }
+
+    printf("[+] Frames with average confidence < 0.50 removed (%d frame(s) deleted).\n", removed_count);
+}
